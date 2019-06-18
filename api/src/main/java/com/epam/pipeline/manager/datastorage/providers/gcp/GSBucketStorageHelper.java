@@ -161,7 +161,7 @@ public class GSBucketStorageHelper {
     public DataStorageFolder createFolder(final GSBucketStorage storage, final String path) {
         String folderPath = path.trim();
         folderPath = normalizeFolderPath(folderPath);
-        Assert.state(!isFolderExists(storage, folderPath), "Folder already exists");
+        checkFolderDoesNotExist(storage.getPath(), folderPath, gcpClient.buildStorageClient(region));
         final String tokenFilePath = folderPath + ProviderUtils.FOLDER_TOKEN_FILE;
 
         createFile(storage, tokenFilePath, EMPTY_FILE_CONTENT, null);
@@ -233,10 +233,9 @@ public class GSBucketStorageHelper {
         final String oldFolderPath = normalizeFolderPath(oldPath);
         final String newFolderPath = normalizeFolderPath(newPath);
 
-        checkBlobExistsAndGet(bucketName, oldFolderPath, client, null);
-        checkBlobDoesNotExist(bucketName, newFolderPath, client);
+        final Page<Blob> blobs = checkFolderExistsAndGet(bucketName, oldFolderPath, client);
+        checkFolderDoesNotExist(bucketName, newFolderPath, client);
 
-        final Page<Blob> blobs = client.list(storage.getPath(), Storage.BlobListOption.prefix(oldFolderPath));
         blobs.iterateAll().forEach(oldBlob -> {
             final String oldBlobName = oldBlob.getName();
             final String newBlobName = newFolderPath + oldBlobName.substring(oldFolderPath.length());
@@ -366,14 +365,6 @@ public class GSBucketStorageHelper {
         deleteBlob(blob, client, true);
     }
 
-    private boolean isFolderExists(final GSBucketStorage storage, final String folderPath) {
-        final Storage client = gcpClient.buildStorageClient(region);
-        return client.list(storage.getPath(),
-                Storage.BlobListOption.currentDirectory(),
-                Storage.BlobListOption.prefix(folderPath))
-                .iterateAll().iterator().hasNext();
-    }
-
     public void applyStoragePolicy(final GSBucketStorage storage, final StoragePolicy policy) {
         final Storage client = gcpClient.buildStorageClient(region);
         final String bucketName = storage.getPath();
@@ -488,7 +479,7 @@ public class GSBucketStorageHelper {
     private List<AbstractDataStorageItem> listItemsWithoutVersions(final Page<Blob> blobs) {
         final List<AbstractDataStorageItem> items = new ArrayList<>();
 
-        for (Blob blob : blobs.iterateAll()) {
+        for (Blob blob : blobs.getValues()) {
             if (blob.getName().endsWith(ProviderUtils.FOLDER_TOKEN_FILE)) {
                 continue;
             }
@@ -503,7 +494,7 @@ public class GSBucketStorageHelper {
         final List<AbstractDataStorageItem> items = new ArrayList<>();
         final Map<String, List<Blob>> files = new HashMap<>();
 
-        for (Blob blob : blobs.iterateAll()) {
+        for (Blob blob : blobs.getValues()) {
             if (blob.getName().endsWith(ProviderUtils.FOLDER_TOKEN_FILE)) {
                 continue;
             }
@@ -640,5 +631,18 @@ public class GSBucketStorageHelper {
 
     private String buildToken(final String refreshToken) {
         return "Bearer " + refreshToken;
+    }
+
+    private Page<Blob> checkFolderExistsAndGet(final String bucketName, final String folderPath, final Storage client) {
+        final Page<Blob> blobs = client.list(bucketName, Storage.BlobListOption.prefix(folderPath));
+        Assert.isTrue(Objects.nonNull(blobs) && blobs.iterateAll().iterator().hasNext(), messageHelper
+                .getMessage(MessageConstants.ERROR_DATASTORAGE_PATH_NOT_FOUND, folderPath, bucketName));
+        return blobs;
+    }
+
+    private void checkFolderDoesNotExist(final String bucketName, final String folderPath, final Storage client) {
+        final Page<Blob> blobs = client.list(bucketName, Storage.BlobListOption.prefix(folderPath));
+        Assert.isTrue(Objects.isNull(blobs) || !blobs.iterateAll().iterator().hasNext(), messageHelper
+                .getMessage(MessageConstants.ERROR_DATASTORAGE_PATH_ALREADY_EXISTS, folderPath, bucketName));
     }
 }
