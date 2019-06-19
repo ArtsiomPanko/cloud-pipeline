@@ -15,6 +15,7 @@ import com.google.api.services.compute.model.Instance;
 import com.google.api.services.compute.model.InstanceList;
 import com.google.api.services.compute.model.NetworkInterface;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.collections4.CollectionUtils;
 import org.apache.commons.collections4.ListUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -30,7 +31,6 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class GCPMonitorService implements VMMonitorService<GCPRegion> {
-
     private final HttpTransport httpTransport;
     private final JacksonFactory jsonFactory;
     private final VMTag vmInstanceTag;
@@ -47,6 +47,11 @@ public class GCPMonitorService implements VMMonitorService<GCPRegion> {
     }
 
     @Override
+    public CloudProvider provider() {
+        return CloudProvider.GCP;
+    }
+
+    @Override
     public List<VirtualMachine> fetchRunningVms(final GCPRegion region) {
         final Compute compute = getCompute(region);
         final InstanceList instanceList = getGCPVMInstances(compute, region);
@@ -58,7 +63,7 @@ public class GCPMonitorService implements VMMonitorService<GCPRegion> {
             final GoogleCredential googleCredential =
                     GoogleCredential.fromStream(inputStream)
                             .createScoped(Collections.singletonList(ComputeScopes.COMPUTE_READONLY));
-            return new Compute.Builder(httpTransport, jsonFactory, googleCredential).setApplicationName("name").build();
+            return new Compute.Builder(httpTransport, jsonFactory, googleCredential).setApplicationName(region.getApplicationName()).build();
         } catch (IOException e) {
             throw new RuntimeException(e.getMessage());
         }
@@ -83,22 +88,16 @@ public class GCPMonitorService implements VMMonitorService<GCPRegion> {
 
     private String getPrivateIP(final Instance instance) {
         final List<NetworkInterface> networkInterfaces = instance.getNetworkInterfaces();
-        return networkInterfaces.get(0).getNetworkIP();
+        return CollectionUtils.isNotEmpty(networkInterfaces) ? networkInterfaces.get(0).getNetworkIP() : null;
     }
 
     private InstanceList getGCPVMInstances(final Compute compute, final GCPRegion region) {
         try {
             final Compute.Instances.List instances = compute.instances().list(region.getProject(), region.getRegionCode());
-            final InstanceList instanceList = instances.execute();
 
-            return instanceList;
+            return instances.execute();
         } catch (IOException e) {
             throw new RuntimeException(e.getMessage());
         }
-    }
-
-    @Override
-    public CloudProvider provider() {
-        return CloudProvider.GCP;
     }
 }
