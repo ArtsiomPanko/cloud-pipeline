@@ -21,7 +21,7 @@ public class FolderSynchronizer implements ElasticsearchSynchronizer {
     private final PipelineEventDao pipelineEventDao;
     private final PipelineEvent.ObjectType objectType = PipelineEvent.ObjectType.FOLDER;
     private final CloudPipelineAPIClient client;
-    private final FolderRepo repo;
+    private final FolderRepo folderRepo;
 
     @Override
     public void synchronize(final LocalDateTime lastSyncTime, final LocalDateTime syncStart) {
@@ -50,10 +50,10 @@ public class FolderSynchronizer implements ElasticsearchSynchronizer {
                 //convert Folder to doc
                 .map(folder -> convert(folder))
                 //save to ES using repo
-                .forEach(doc -> repo.save(doc));
+                .forEach(doc -> folderRepo.save(doc));
     }
 
     private FolderDoc convert(final Folder folder) {
-        return null;
+        return new FolderDoc(folder);
     }
 }
